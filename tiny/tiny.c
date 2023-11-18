@@ -65,7 +65,6 @@ void doit(int fd){
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
-  // problem 11.11을 위해 HEAD 추가
   read_requesthdrs(&rio);  
 
   /* Parse URI from GET request */
