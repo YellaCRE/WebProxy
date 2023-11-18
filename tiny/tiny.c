@@ -190,11 +190,12 @@ void serve_static(int fd, char *filename, int filesize){
   printf("%s", buf);
 
   /* Send response body to client */
-  srcfd = Open(filename, O_RDONLY, 0);                         // filename을 열고 srcfd를 얻어온다
-  srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);  // srcfd의 파일을 가상메모리에 매핑
-  Close(srcfd);                                                // 가상메모리에 매핑했기 때문에 srcfd는 닫아준다
-  Rio_writen(fd, srcp, filesize);                              // 가상메모리에 매핑한 src파일을 fd에 저장
-  Munmap(srcp, filesize);                                      // 가상메모리도 free해준다
+  srcfd = Open(filename, O_RDONLY, 0);     // filename을 열고 srcfd를 얻어온다
+  srcp = (char*)Malloc(filesize);          // malloc에 할당
+  Rio_readn(srcfd, srcp, filesize);        // srcfd를 srcp에 복사
+  Close(srcfd);                            // 가상메모리에 매핑했기 때문에 srcfd는 닫아준다
+  Rio_writen(fd, srcp, filesize);          // 가상메모리에 매핑한 src파일을 fd에 저장
+  free(srcp);                              // alloc한 메모리를 free해준다
 }
 
 // serve_static의 헬퍼 함수
