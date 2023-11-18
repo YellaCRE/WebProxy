@@ -14,8 +14,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs);
 void serve_static(int fd, char *filename, int filesize);
 void get_filetype(char *filename, char *filetype);
 void serve_dynamic(int fd, char *filename, char *cgiargs);
-void clienterror(int fd, char *cause, char *errnum, char *shortmsg,
-                 char *longmsg);
+void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
 /* ====================== main ====================== */
 
@@ -35,10 +34,8 @@ int main(int argc, char **argv) {
   // 반복실행 서버, 연결 요청을 계속 받는다
   while (1) {
     clientlen = sizeof(clientaddr);
-    connfd = Accept(listenfd, (SA *)&clientaddr,
-                    &clientlen);  // line:netp:tiny:accept
-    Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE,
-                0);
+    connfd = Accept(listenfd, (SA *)&clientaddr, &clientlen);  // line:netp:tiny:accept
+    Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
     printf("Accepted connection from (%s, %s)\n", hostname, port);
     doit(connfd);   // line:netp:tiny:doit
     Close(connfd);  // line:netp:tiny:close
@@ -64,7 +61,7 @@ void doit(int fd){
   sscanf(buf, "%s %s %s", method, uri, version);
 
   // method가 GET이 아니라면 error message 출력
-  if (strcasecmp(method, "GET") != 0 || strcasecmp(method, "HEAD") != 0) {
+  if (strcasecmp(method, "GET") != 0) {
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
@@ -196,7 +193,7 @@ void serve_static(int fd, char *filename, int filesize){
   srcfd = Open(filename, O_RDONLY, 0);                         // filename을 열고 srcfd를 얻어온다
   srcp = Mmap(0, filesize, PROT_READ, MAP_PRIVATE, srcfd, 0);  // srcfd의 파일을 가상메모리에 매핑
   Close(srcfd);                                                // 가상메모리에 매핑했기 때문에 srcfd는 닫아준다
-  rio_writen(fd, srcp, filesize);                              // 가상메모리에 매핑한 src파일을 fd에 저장
+  Rio_writen(fd, srcp, filesize);                              // 가상메모리에 매핑한 src파일을 fd에 저장
   Munmap(srcp, filesize);                                      // 가상메모리도 free해준다
 }
 
@@ -212,6 +209,8 @@ void get_filetype(char *filename, char *filetype){
     strcpy(filetype, "image/jpeg");
   else if (strstr(filename, ".mpg"))
     strcpy(filetype, "video/mpg");
+  else if (strstr(filename, ".mp4"))  // 다양한 파일 형식을 추가할 수 있다
+    strcpy(filetype, "video/mp4");
   else
     strcpy(filetype, "text/plain");
 }
@@ -221,7 +220,7 @@ void get_filetype(char *filename, char *filetype){
 void serve_dynamic(int fd, char *filename, char *cgiargs){
   char buf[MAXLINE], *emptylist[] = { NULL };
 
-  /* Return first part of HTTP response */
+  // response 헤더는 부모가 보내주지만 나머지는 CGI에서 보내주어야 한다
   sprintf(buf, "HTTP/1.0 200 OK\r\n");
   Rio_writen(fd, buf, strlen(buf));
   sprintf(buf, "Server: Tiny Web Server\r\n");
