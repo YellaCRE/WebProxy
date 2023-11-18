@@ -6,7 +6,7 @@ void echo(int connfd){
     char buf[MAXLINE];
     rio_t rio;
 
-    rio_readinitb(&rio, connfd);  // connfd의 정보를 읽어서 init을 rio에 저장
+    rio_readinitb(&rio, connfd);  // connfd와 연결하고 rio(robust I/O (Rio)) 초기화
 
     // EOF를 만날 때까지 반복
     while((n = rio_readlineb(&rio, buf, MAXLINE)) != 0) {  // rio의 내용을 user buffer에 읽음

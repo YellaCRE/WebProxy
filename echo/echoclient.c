@@ -16,7 +16,7 @@ int main(int argc, char **argv){
     clientfd = open_clientfd(host, port);  // connect 보내고 대기
 
     //connect가 종료되면 실행
-    Rio_readinitb(&rio, clientfd);         // clientfd의 정보를 읽어서 init을 rio에 저장
+    Rio_readinitb(&rio, clientfd);         // clientfd와 연결하고 rio(robust I/O (Rio)) 초기화
 
     // fgets가 EOF 표준 입력을 만나면 종료 -> 다 읽었거나, 컨트롤 D 강제중지 당했을 때
     while (fgets(buf, MAXLINE, stdin) != NULL) {  // 사용자가 입력한 stdin을 버퍼에 저장
