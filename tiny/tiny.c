@@ -233,8 +233,8 @@ void serve_dynamic(int fd, char *filename, char *cgiargs, char *method){
   // 자식을 생성한다
   if (Fork() == 0) {
     /* Real server would set all CGI vars here */
-    setenv("QUERY_STRING", cgiargs, 1);   // 인자를 setenv로 받고
-    setenv("REQUEST_METHOD", method, 1);  // method 종류도 전달
+    setenv("QUERY_STRING", cgiargs, 1);   // 인자를 setenv로 저장
+    setenv("REQUEST_METHOD", method, 1);  // method 종류도 저장
     Dup2(fd, STDOUT_FILENO);              // 클라이언트에게 전달할 통로를 연결한다
     Execve(filename, emptylist, environ); // CGI 프로그램 실행!
   }
