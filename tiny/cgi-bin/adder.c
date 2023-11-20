@@ -5,7 +5,7 @@
 #include "csapp.h"
 
 int main(void) {
-  char *buf, *p;
+  char *buf, *p, *method;
   char arg1[MAXLINE], arg2[MAXLINE], content[MAXLINE];
   int n1=0, n2=0;
 
@@ -16,6 +16,9 @@ int main(void) {
     sscanf(buf, "first=%d", &n1);  // buffer에서 %d를 n1으로 가져온다
     sscanf(p+1, "second=%d", &n2); // p+1 주소에 있는 값에서 %d를 n2로 가져온다
   }
+
+  // method를 받아온다
+  method = getenv("REQUEST_METHOD");
   
   /* Make the response body */
   sprintf(content, "QUERY_STRING=%s", buf);
@@ -29,7 +32,10 @@ int main(void) {
   printf("Content-length: %d\r\n", (int)strlen(content));
   printf("Content-type: text/html\r\n\r\n");
   
-  printf("%s", content);  // 결과 출력
+  // get일 때만 출력
+  if (strcasecmp(method, "GET") == 0){
+    printf("%s", content);  // 결과 출력
+  }
   fflush(stdout);         // 버퍼 비우기
   exit(0);
 }

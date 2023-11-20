@@ -11,9 +11,9 @@
 void doit(int fd);
 void read_requesthdrs(rio_t *rp);
 int parse_uri(char *uri, char *filename, char *cgiargs);
-void serve_static(int fd, char *filename, int filesize);
+void serve_static(int fd, char *filename, int filesize, char *method);
 void get_filetype(char *filename, char *filetype);
-void serve_dynamic(int fd, char *filename, char *cgiargs);
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method);
 void clienterror(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg);
 
 /* ====================== main ====================== */
@@ -57,11 +57,12 @@ void doit(int fd){
   printf("Request headers:\n");
   printf("%s", buf);                  // request header 출력
 
+
   // buf에 있는 데이터를 method, uri, version에 담기
   sscanf(buf, "%s %s %s", method, uri, version);
 
   // method가 GET이 아니라면 error message 출력
-  if (strcasecmp(method, "GET") != 0) {
+  if (!(strcasecmp(method, "GET") == 0 || strcasecmp(method, "HEAD") == 0)) {
     clienterror(fd, method, "501", "Not implemented", "Tiny does not implement this method");
     return;
   }
@@ -84,7 +85,7 @@ void doit(int fd){
       return;
     }
     // response static file
-    serve_static(fd, filename, sbuf.st_size);
+    serve_static(fd, filename, sbuf.st_size, method);
   }
   // dynamic contents
   else {
@@ -94,7 +95,7 @@ void doit(int fd){
       return;
   }
     // response dynamic files
-    serve_dynamic(fd, filename, cgiargs);
+    serve_dynamic(fd, filename, cgiargs, method);
   }
 }
 
@@ -173,7 +174,7 @@ int parse_uri(char *uri, char *filename, char *cgiargs){
 /* ====================== serve_static ====================== */
 
 // static content 처리
-void serve_static(int fd, char *filename, int filesize){
+void serve_static(int fd, char *filename, int filesize, char *method){
   int srcfd;
   char *srcp, filetype[MAXLINE], buf[MAXBUF];
 
@@ -188,6 +189,9 @@ void serve_static(int fd, char *filename, int filesize){
   printf("Response headers:\n");
   printf("%s", buf);
 
+  // HEAD 요청이면 body를 만들지 않고 종료
+  if (strcasecmp(method, "HEAD") == 0) return;
+    
   /* Send response body to client */
   srcfd = Open(filename, O_RDONLY, 0);     // filename을 열고 srcfd를 얻어온다
   srcp = (char*)Malloc(filesize);          // malloc에 할당
@@ -217,7 +221,7 @@ void get_filetype(char *filename, char *filetype){
 
 /* ====================== serve_dynamic ====================== */
 
-void serve_dynamic(int fd, char *filename, char *cgiargs){
+void serve_dynamic(int fd, char *filename, char *cgiargs, char *method){
   char buf[MAXLINE], *emptylist[] = { NULL };
 
   // response 헤더는 부모가 보내주지만 나머지는 CGI에서 보내주어야 한다
@@ -230,6 +234,7 @@ void serve_dynamic(int fd, char *filename, char *cgiargs){
   if (Fork() == 0) {
     /* Real server would set all CGI vars here */
     setenv("QUERY_STRING", cgiargs, 1);   // 인자를 setenv로 받고
+    setenv("REQUEST_METHOD", method, 1);  // method 종류도 전달
     Dup2(fd, STDOUT_FILENO);              // 클라이언트에게 전달할 통로를 연결한다
     Execve(filename, emptylist, environ); // CGI 프로그램 실행!
   }
