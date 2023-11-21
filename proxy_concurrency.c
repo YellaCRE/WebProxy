@@ -53,10 +53,10 @@ int main(int argc, char **argv) {
 void* thread(void *vargp) {
     int connfd = *((int *)vargp);
     Pthread_detach(pthread_self());
-    Free(vargp);    // free를 꼭 해주어야 한다
+    Free(vargp);
     do_it(connfd);
     Close(connfd);
-    return NULL;    // NULL 리턴도 중요하다
+    return NULL;
   }
 
 /* ====================== doit ====================== */
