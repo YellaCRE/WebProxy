@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "csapp.h"
+#include "cache.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -14,9 +15,9 @@ static const char *user_agent_hdr =
 
 void *thread(void *vargp);
 void do_it(int fd);
-void do_request(int p_clientfd, char *filename, char *host);
+void do_request(int p_clientfd, char *path, char *host);
 void do_response(int p_connfd, int p_clientfd);
-int parse_uri(char *uri, char *filename, char *host, char *port);
+int parse_uri(char *uri, char *path, char *host, char *port);
 
 /* ====================== main ====================== */
 
@@ -33,6 +34,9 @@ int main(int argc, char **argv) {
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
     exit(1);
   }
+
+  // cache 생성
+  cache_init();
 
   listenfd = Open_listenfd(argv[1]);
 
@@ -64,9 +68,15 @@ void* thread(void *vargp) {
 void do_it(int p_connfd){
   int p_clientfd;
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-  char filename[MAXLINE], host[MAXLINE], port[MAXLINE];
+  char path[MAXLINE], host[MAXLINE], port[MAXLINE];
   rio_t rio;
-  
+
+  cnode_t * node;
+  char payload[MAX_OBJECT_SIZE];
+  size_t n;                  // size_t ssize_t 똑같다
+  char res_buf[MAX_CACHE_SIZE];  // MAXLINE을 하면 8점이 나온다
+  rio_t res_rio;
+
   /* Read request line and headers from Client */
   Rio_readinitb(&rio, p_connfd);           
   Rio_readlineb(&rio, buf, MAXLINE);       
@@ -77,17 +87,55 @@ void do_it(int p_connfd){
   sscanf(buf, "%s %s %s", method, uri, version); 
 
   /* Parse URI from GET request */
-  parse_uri(uri, filename, host, port);
+  parse_uri(uri, path, host, port);
+
+  /* ====================== caching ====================== */
+
+  Cache_check();
+  if ((node = match(host, port, path)) != NULL) {
+    printf("Cache hit!\n");
+    delete(node);
+    enqueue(node);
+    Rio_writen(p_connfd, node->payload, node->size);
+    printf("Senting respond %u bytes from cache\n",
+            (unsigned int)node->size);
+
+    printf("Proxy is exiting\n\n");
+    return;
+  }
+
+  // 캐시에 없으면
+  printf("Cache miss!\n");
 
   p_clientfd = open_clientfd(host, port);             // p_clientfd = proxy의 clientfd (연결됨)
-  do_request(p_clientfd, filename, host);             // p_clientfd에 Request headers 저장과 동시에 server의 connfd에 쓰여짐
-  do_response(p_connfd, p_clientfd);                  
-  Close(p_clientfd);                                  // p_clientfd 역할 끝
+  do_request(p_clientfd, path, host);             // p_clientfd에 Request headers 저장과 동시에 server의 connfd에 쓰여짐
+
+  // do_response
+  Rio_readinitb(&res_rio, p_clientfd);
+  n = Rio_readnb(&res_rio, res_buf, MAX_CACHE_SIZE);  // Rio_readlineb이 아니라 Rio_readnb
+  Rio_writen(p_connfd, res_buf, n);
+
+  strcpy(payload, "");
+  if (n <= MAX_OBJECT_SIZE) {
+    strcat(payload, res_buf);
+    node = new(host, port, path, payload, n);
+
+    Cache_check();            
+    while (cache_load + n > MAX_CACHE_SIZE) {
+        printf("!!!!!!!!!!!!!!!!!Cache evicted!!!!!!!!!!!!!!!!!!\n");
+        dequeue();
+    }
+    enqueue(node);
+    Cache_check();
+  }
+  /* ====================== doit ====================== */
+
+  Close(p_clientfd);
 }
 
 /* ====================== parse_uri ====================== */
 
-int parse_uri(char *uri, char *filename, char *host, char *port){ 
+int parse_uri(char *uri, char *path, char *host, char *port){ 
   char *ptr;
 
   if (!(ptr = strstr(uri, "://"))) // http:// 가 있는지 확인
@@ -111,22 +159,22 @@ int parse_uri(char *uri, char *filename, char *host, char *port){
   if ((ptr = strchr(port, '/'))){ // port = 80/index.html
     *ptr = '\0';                  // port = 80
     ptr += 1;     
-    strcpy(filename, "/");        // filename = /
-    strcat(filename, ptr);        // filename = /index.html
+    strcpy(path, "/");        // path = /
+    strcat(path, ptr);        // path = /index.html
   }  
-  else strcpy(filename, "/");
+  else strcpy(path, "/");
 
   return 0; // function int return => for valid check
 }
 
 /* ====================== do_request ====================== */
 
-void do_request(int p_clientfd, char *filename, char *host){
+void do_request(int p_clientfd, char *path, char *host){
   char *version = "HTTP/1.0";
 	char buf[MAXLINE];
 
   /*Set header*/
-	sprintf(buf, "GET %s %s\r\n", filename, version);
+	sprintf(buf, "GET %s %s\r\n", path, version);
 	sprintf(buf, "%sHost: %s\r\n", buf, host);    
   sprintf(buf, "%s%s", buf, user_agent_hdr);
   sprintf(buf, "%sConnections: close\r\n", buf);
@@ -145,4 +193,6 @@ void do_response(int p_connfd, int p_clientfd){
   Rio_readinitb(&rio, p_clientfd);
   n = Rio_readnb(&rio, buf, MAX_CACHE_SIZE);  // Rio_readlineb이 아니라 Rio_readnb
   Rio_writen(p_connfd, buf, n);
+
+  return n;
 }
