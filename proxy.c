@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
 
   while (1) {
     clientlen = sizeof(clientaddr);
-    connfdp = Malloc(sizeof(int));     
+    connfdp = Malloc(sizeof(int));                       // race 방지를 위해 malloc에 connfd를 저장해야한다
     *connfdp = Accept(listenfd, (SA *) &clientaddr, &clientlen); 
 
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
@@ -61,7 +61,7 @@ void* thread(void *vargp) {
     return NULL;    // NULL 리턴도 중요하다
   }
 
-/* ====================== doit ====================== */
+/* ====================== do_it ====================== */
 
 void do_it(int proxy_connfd){
   int proxy_clientfd;
@@ -87,19 +87,19 @@ void do_it(int proxy_connfd){
   // Cache hit이면
   if ((node = match(host, port, path)) != NULL) {
     printf("Cache hit!\n");
-    delete(node);                                     // 노드 삭제하고
-    enqueue(node);                                    // 가장 앞에 삽입
+    delete(node);                                         // 노드 삭제하고
+    enqueue(node);                                        // 가장 앞에 삽입
     Rio_writen(proxy_connfd, node->payload, node->size);  // client에게 cache 내용을 보낸다
     return;
   }
 
   // Cache miss이면
   printf("Cache miss!\n");
-  proxy_clientfd = open_clientfd(host, port);
-  do_request(proxy_clientfd, path, host);
-  do_response(proxy_connfd, proxy_clientfd, path, host, port);
+  proxy_clientfd = open_clientfd(host, port);                   // proxy의 clientfd와 server의 connfd를 연결
+  do_request(proxy_clientfd, path, host);                       // proxy의 clientfd에 Request 쓰임과 동시에 server의 connfd에 쓰여짐
+  do_response(proxy_connfd, proxy_clientfd, path, host, port);  // host에게 Response를 보내고 캐시에 저장
 
-  Close(proxy_clientfd);
+  Close(proxy_clientfd);                                        // proxy_clientfd 명시적 종료
 }
 
 /* ====================== parse_uri ====================== */
@@ -149,7 +149,7 @@ void do_request(int proxy_clientfd, char *path, char *host){
   sprintf(buf, "%sConnections: close\r\n", buf);
   sprintf(buf, "%sProxy-Connection: close\r\n\r\n", buf);
 
-  Rio_writen(proxy_clientfd, buf, strlen(buf));
+  Rio_writen(proxy_clientfd, buf, strlen(buf));   // proxy_clientfd에 request header를 쓴다
 }
 
 /* ====================== do_response ====================== */
@@ -161,9 +161,9 @@ void do_response(int proxy_connfd, int proxy_clientfd, char *path, char *host, c
 
   cnode_t * node;
 
-  Rio_readinitb(&rio, proxy_clientfd);
-  n = Rio_readnb(&rio, buf, MAX_CACHE_SIZE);
-  Rio_writen(proxy_connfd, buf, n);
+  Rio_readinitb(&rio, proxy_clientfd);          
+  n = Rio_readnb(&rio, buf, MAX_CACHE_SIZE);    // &rio에는 server에서 받아 온 내용이 있음
+  Rio_writen(proxy_connfd, buf, n);             // proxy connfd에 &rio에 있는 내용을 쓴다
 
   // cache에 저장
   if (n <= MAX_OBJECT_SIZE) {
