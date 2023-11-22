@@ -39,7 +39,7 @@ int main(int argc, char **argv) {
   // 반복실행 서버, 연결 요청을 계속 받는다
   while (1) {
     clientlen = sizeof(clientaddr);
-    connfdp = Malloc(sizeof(int));     
+    connfdp = Malloc(sizeof(int));  // race 방지를 위해 malloc에 connfd를 저장해야한다
     *connfdp = Accept(listenfd, (SA *) &clientaddr, &clientlen); 
 
     Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
