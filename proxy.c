@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "csapp.h"
-#include "cache.h"
+#include "cache.h"  // cache 활용
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -16,7 +16,7 @@ static const char *user_agent_hdr =
 void *thread(void *vargp);
 void do_it(int fd);
 void do_request(int p_clientfd, char *path, char *host);
-void do_response(int p_connfd, int p_clientfd);
+void do_response(int p_connfd, int p_clientfd, char *path, char *host, char *port);
 int parse_uri(char *uri, char *path, char *host, char *port);
 
 /* ====================== main ====================== */
@@ -29,7 +29,6 @@ int main(int argc, char **argv) {
 
   pthread_t tid;
 
-  /* Check command line args */
   if (argc != 2) {
     fprintf(stderr, "usage: %s <port>\n", argv[0]);
     exit(1);
@@ -40,7 +39,6 @@ int main(int argc, char **argv) {
 
   listenfd = Open_listenfd(argv[1]);
 
-  // 반복실행 서버, 연결 요청을 계속 받는다
   while (1) {
     clientlen = sizeof(clientaddr);
     connfdp = Malloc(sizeof(int));     
@@ -72,63 +70,34 @@ void do_it(int p_connfd){
   rio_t rio;
 
   cnode_t * node;
-  char payload[MAX_OBJECT_SIZE];
-  size_t n;                  // size_t ssize_t 똑같다
-  char res_buf[MAX_CACHE_SIZE];  // MAXLINE을 하면 8점이 나온다
-  rio_t res_rio;
 
-  /* Read request line and headers from Client */
   Rio_readinitb(&rio, p_connfd);           
   Rio_readlineb(&rio, buf, MAXLINE);       
   printf("Request headers:\n");
   printf("%s", buf);
 
-  // buf에 있는 데이터를 method, uri, version에 담기
   sscanf(buf, "%s %s %s", method, uri, version); 
 
-  /* Parse URI from GET request */
   parse_uri(uri, path, host, port);
 
   /* ====================== caching ====================== */
 
   Cache_check();
+
+  // Cache hit이면
   if ((node = match(host, port, path)) != NULL) {
     printf("Cache hit!\n");
-    delete(node);
-    enqueue(node);
-    Rio_writen(p_connfd, node->payload, node->size);
-    printf("Senting respond %u bytes from cache\n",
-            (unsigned int)node->size);
-
-    printf("Proxy is exiting\n\n");
+    delete(node);                                     // 노드 삭제하고
+    enqueue(node);                                    // 가장 앞에 삽입
+    Rio_writen(p_connfd, node->payload, node->size);  // client에게 cache 내용을 보낸다
     return;
   }
 
-  // 캐시에 없으면
+  // Cache miss이면
   printf("Cache miss!\n");
-
-  p_clientfd = open_clientfd(host, port);             // p_clientfd = proxy의 clientfd (연결됨)
-  do_request(p_clientfd, path, host);             // p_clientfd에 Request headers 저장과 동시에 server의 connfd에 쓰여짐
-
-  // do_response
-  Rio_readinitb(&res_rio, p_clientfd);
-  n = Rio_readnb(&res_rio, res_buf, MAX_CACHE_SIZE);  // Rio_readlineb이 아니라 Rio_readnb
-  Rio_writen(p_connfd, res_buf, n);
-
-  strcpy(payload, "");
-  if (n <= MAX_OBJECT_SIZE) {
-    strcat(payload, res_buf);
-    node = new(host, port, path, payload, n);
-
-    Cache_check();            
-    while (cache_load + n > MAX_CACHE_SIZE) {
-        printf("!!!!!!!!!!!!!!!!!Cache evicted!!!!!!!!!!!!!!!!!!\n");
-        dequeue();
-    }
-    enqueue(node);
-    Cache_check();
-  }
-  /* ====================== doit ====================== */
+  p_clientfd = open_clientfd(host, port);
+  do_request(p_clientfd, path, host);
+  do_response(p_connfd, p_clientfd, path, host, port);
 
   Close(p_clientfd);
 }
@@ -138,33 +107,33 @@ void do_it(int p_connfd){
 int parse_uri(char *uri, char *path, char *host, char *port){ 
   char *ptr;
 
-  if (!(ptr = strstr(uri, "://"))) // http:// 가 있는지 확인
+  if (!(ptr = strstr(uri, "://")))
     return -1;
   ptr += 3;                       
-  strcpy(host, ptr);               // host = www.google.com:80/index.html
+  strcpy(host, ptr);
 
-  if((ptr = strchr(host, ':'))){   // strchr(): 문자 하나만 찾는 함수 (''작은따옴표사용)
-    *ptr = '\0';                   // host = www.google.com
+  if((ptr = strchr(host, ':'))){
+    *ptr = '\0';
     ptr += 1;
-    strcpy(port, ptr);             // port = 80/index.html
+    strcpy(port, ptr);
   }
   else{
     if((ptr = strchr(host, '/'))){
       *ptr = '\0';
       ptr += 1;
     }
-    strcpy(port, "80");           // port 디폴트 값
+    strcpy(port, "80");
   }
 
-  if ((ptr = strchr(port, '/'))){ // port = 80/index.html
-    *ptr = '\0';                  // port = 80
+  if ((ptr = strchr(port, '/'))){
+    *ptr = '\0';
     ptr += 1;     
-    strcpy(path, "/");        // path = /
-    strcat(path, ptr);        // path = /index.html
+    strcpy(path, "/");
+    strcat(path, ptr);
   }  
   else strcpy(path, "/");
 
-  return 0; // function int return => for valid check
+  return 0;
 }
 
 /* ====================== do_request ====================== */
@@ -185,14 +154,28 @@ void do_request(int p_clientfd, char *path, char *host){
 
 /* ====================== do_response ====================== */
 
-void do_response(int p_connfd, int p_clientfd){
-  size_t n;                  // size_t ssize_t 똑같다
-  char buf[MAX_CACHE_SIZE];  // MAXLINE을 하면 8점이 나온다
+void do_response(int p_connfd, int p_clientfd, char *path, char *host, char *port){
+  size_t n;
+  char buf[MAX_CACHE_SIZE];
   rio_t rio;
 
+  cnode_t * node;
+
   Rio_readinitb(&rio, p_clientfd);
-  n = Rio_readnb(&rio, buf, MAX_CACHE_SIZE);  // Rio_readlineb이 아니라 Rio_readnb
+  n = Rio_readnb(&rio, buf, MAX_CACHE_SIZE);
   Rio_writen(p_connfd, buf, n);
+
+  // cache에 저장
+  if (n <= MAX_OBJECT_SIZE) {
+    node = new(host, port, path, buf, n);       // 버퍼의 내용으로 새로운 노드 생성
+
+    Cache_check();            
+    while (cache_load + n > MAX_CACHE_SIZE) {  // 자리가 빌 때까지 비우기
+        dequeue();
+    }
+    enqueue(node);                             // 노드 저장
+    Cache_check();
+  }
 
   return n;
 }
