@@ -15,8 +15,8 @@ static const char *user_agent_hdr =
 
 void *thread(void *vargp);
 void do_it(int fd);
-void do_request(int p_clientfd, char *path, char *host);
-void do_response(int p_connfd, int p_clientfd, char *path, char *host, char *port);
+void do_request(int proxy_clientfd, char *path, char *host);
+void do_response(int proxy_connfd, int proxy_clientfd, char *path, char *host, char *port);
 int parse_uri(char *uri, char *path, char *host, char *port);
 
 /* ====================== main ====================== */
@@ -63,15 +63,15 @@ void* thread(void *vargp) {
 
 /* ====================== doit ====================== */
 
-void do_it(int p_connfd){
-  int p_clientfd;
+void do_it(int proxy_connfd){
+  int proxy_clientfd;
   char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
   char path[MAXLINE], host[MAXLINE], port[MAXLINE];
   rio_t rio;
 
   cnode_t * node;
 
-  Rio_readinitb(&rio, p_connfd);           
+  Rio_readinitb(&rio, proxy_connfd);           
   Rio_readlineb(&rio, buf, MAXLINE);       
   printf("Request headers:\n");
   printf("%s", buf);
@@ -89,17 +89,17 @@ void do_it(int p_connfd){
     printf("Cache hit!\n");
     delete(node);                                     // 노드 삭제하고
     enqueue(node);                                    // 가장 앞에 삽입
-    Rio_writen(p_connfd, node->payload, node->size);  // client에게 cache 내용을 보낸다
+    Rio_writen(proxy_connfd, node->payload, node->size);  // client에게 cache 내용을 보낸다
     return;
   }
 
   // Cache miss이면
   printf("Cache miss!\n");
-  p_clientfd = open_clientfd(host, port);
-  do_request(p_clientfd, path, host);
-  do_response(p_connfd, p_clientfd, path, host, port);
+  proxy_clientfd = open_clientfd(host, port);
+  do_request(proxy_clientfd, path, host);
+  do_response(proxy_connfd, proxy_clientfd, path, host, port);
 
-  Close(p_clientfd);
+  Close(proxy_clientfd);
 }
 
 /* ====================== parse_uri ====================== */
@@ -138,7 +138,7 @@ int parse_uri(char *uri, char *path, char *host, char *port){
 
 /* ====================== do_request ====================== */
 
-void do_request(int p_clientfd, char *path, char *host){
+void do_request(int proxy_clientfd, char *path, char *host){
   char *version = "HTTP/1.0";
 	char buf[MAXLINE];
 
@@ -149,21 +149,21 @@ void do_request(int p_clientfd, char *path, char *host){
   sprintf(buf, "%sConnections: close\r\n", buf);
   sprintf(buf, "%sProxy-Connection: close\r\n\r\n", buf);
 
-  Rio_writen(p_clientfd, buf, strlen(buf));
+  Rio_writen(proxy_clientfd, buf, strlen(buf));
 }
 
 /* ====================== do_response ====================== */
 
-void do_response(int p_connfd, int p_clientfd, char *path, char *host, char *port){
+void do_response(int proxy_connfd, int proxy_clientfd, char *path, char *host, char *port){
   size_t n;
   char buf[MAX_CACHE_SIZE];
   rio_t rio;
 
   cnode_t * node;
 
-  Rio_readinitb(&rio, p_clientfd);
+  Rio_readinitb(&rio, proxy_clientfd);
   n = Rio_readnb(&rio, buf, MAX_CACHE_SIZE);
-  Rio_writen(p_connfd, buf, n);
+  Rio_writen(proxy_connfd, buf, n);
 
   // cache에 저장
   if (n <= MAX_OBJECT_SIZE) {
